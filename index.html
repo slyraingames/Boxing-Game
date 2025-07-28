@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turn-Based Fighting Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a202c;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .game-container, .menu-container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #2d3748;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border: 4px solid #4a5568;
+            position: relative; /* Needed for announcer bubble positioning */
+        }
+        .stat-bar-container {
+            background-color: #4a5568;
+            border-radius: 9999px;
+            padding: 0.25rem;
+            border: 2px solid #718096;
+            overflow: hidden;
+        }
+        .stat-bar {
+            height: 1.5rem;
+            border-radius: 9999px;
+            transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out;
+        }
+        .stamina-bar {
+             height: 0.75rem; /* Thinner stamina bar */
+        }
+        .fighter-container {
+            transition: transform 0.2s;
+        }
+        .fighter-hit {
+            animation: shake 0.5s;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .action-button, .modal-button, .menu-button {
+            transition: all 0.2s ease-in-out;
+            font-size: 0.8rem;
+        }
+        .action-button:hover, .modal-button:hover, .menu-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .action-button:disabled, .modal-button:disabled, .menu-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        #game-log {
+            background-color: #1a202c;
+            border: 2px solid #4a5568;
+            height: 150px;
+            overflow-y: auto;
+        }
+        .modal {
+            transition: opacity 0.3s ease;
+        }
+        .fighter-img {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 4px solid #718096;
+            margin: 1rem auto;
+            background-color: #4a5568;
+        }
+        .champion-belt, .golden-name {
+            color: #f6e05e; /* yellow-400 */
+        }
+        .name-input {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #1a202c;
+            border: 2px solid #4a5568;
+            color: #e2e8f0;
+        }
+        #announcer-bubble {
+            position: absolute;
+            top: 60%; /* Positioned lower */
+            left: 75%; /* Positioned to the right */
+            transform: translateX(-50%);
+            background-color: #f6e05e;
+            color: #1a202c;
+            padding: 0.75rem 1.25rem;
+            border-radius: 1rem;
+            border: 3px solid #1a202c;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.5);
+            font-size: 0.9rem;
+            text-align: center;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+            pointer-events: none;
+            max-width: 250px;
+        }
+        #rankings-list {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        /* Volume Slider Styles */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 8.4px;
+            cursor: pointer;
+            background: #4a5568;
+            border-radius: 1.3px;
+            border: 0.2px solid #010101;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #f6e05e;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Menu -->
+    <div id="main-menu" class="menu-container text-center">
+        <h1 class="text-4xl text-yellow-400 mb-4">Pixel Pugilist</h1>
+        <p class="mb-8">The Ultimate Turn-Based Boxing Career Sim</p>
+        <div class="space-y-4">
+            <button id="play-btn" class="menu-button w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-lg text-lg">Play Game</button>
+            <button id="options-btn" class="menu-button w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-lg text-lg">Options</button>
+            <button id="quit-btn" class="menu-button w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-lg text-lg">Quit</button>
+        </div>
+    </div>
+
+    <!-- Options Menu -->
+    <div id="options-menu" class="menu-container hidden text-center">
+        <h1 class="text-3xl text-yellow-400 mb-6">Options</h1>
+        <div class="space-y-6">
+            <div>
+                <label for="sfx-volume-slider" class="block text-lg mb-2">Sound FX Volume</label>
+                <input type="range" id="sfx-volume-slider" min="0" max="100" value="40" class="w-full">
+            </div>
+            <div>
+                <label for="music-volume-slider" class="block text-lg mb-2">Music Volume</label>
+                <input type="range" id="music-volume-slider" min="0" max="100" value="40" class="w-full">
+            </div>
+             <div class="flex items-center justify-center">
+                <label for="music-toggle" class="text-lg mr-4">Music Enabled</label>
+                <input type="checkbox" id="music-toggle" class="form-checkbox h-6 w-6 text-yellow-400 bg-gray-800 border-gray-600 focus:ring-yellow-500">
+            </div>
+        </div>
+        <button id="back-btn" class="menu-button mt-8 w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 px-6 rounded-lg text-lg">Back</button>
+    </div>
+
+    <!-- Name Input Modal -->
+    <div id="name-modal" class="modal fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center hidden">
+        <div class="bg-gray-800 p-8 rounded-lg text-center shadow-xl w-full max-w-md">
+            <h2 class="text-2xl mb-4">Enter Your Fighter's Name</h2>
+            <input type="text" id="player-name-input" class="name-input w-full p-2 rounded mb-4 text-center" maxlength="15" placeholder="FIGHTER">
+            <button id="start-game-btn" class="modal-button w-full bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg">Start Career</button>
+        </div>
+    </div>
+
+    <div id="game-container" class="game-container hidden">
+        <div id="announcer-bubble"></div>
+        <div class="flex justify-between items-center mb-2">
+             <button onclick="showInGameOptionsModal()" class="modal-button bg-gray-600 hover:bg-gray-700 text-white p-3 rounded-lg text-lg">⚙️</button>
+            <button onclick="showRankingsModal()" class="modal-button bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded-lg text-xs">View Rankings</button>
+        </div>
+        <p id="tournament-round" class="text-center mb-6 text-lg">Fight #1</p>
+
+        <!-- Fighters Area -->
+        <div class="flex justify-between items-start mb-6 space-x-4">
+            <!-- Player -->
+            <div id="player-container" class="fighter-container w-1/2 text-center">
+                <h2 class="text-2xl mb-2 text-blue-400"><span id="player-name-display">Player</span> <span id="champion-indicator" class="champion-belt hidden">🏆</span></h2>
+                <div class="stat-bar-container mb-1">
+                    <div id="player-health-bar" class="stat-bar bg-green-500" style="width: 100%;"></div>
+                </div>
+                <div class="stat-bar-container">
+                    <div id="player-stamina-bar" class="stat-bar stamina-bar bg-blue-500" style="width: 100%;"></div>
+                </div>
+                <p id="player-main-stats-text" class="text-sm mt-2">HP: 100/100 | SP: 100/100</p>
+                <img src="https://placehold.co/100x100/3B82F6/FFFFFF?text=YOU" alt="Player Face" class="fighter-img">
+                <div id="player-stats" class="text-sm mt-2 space-y-1">
+                    <p>Rank: <span id="player-rank">49</span></p>
+                    <p>Record: <span id="player-wins">0</span>-<span id="player-losses">0</span> (<span id="win-streak">0</span> streak)</p>
+                    <p>Title Defenses: <span id="player-defenses">0</span></p>
+                    <p>Money: $<span id="player-money">0</span></p>
+                    <p>Strength: Lvl <span id="player-strength">1</span></p>
+                    <p>Defense: Lvl <span id="player-defense">1</span></p>
+                    <p>Accuracy: Lvl <span id="player-accuracy">1</span></p>
+                    <p>Stamina: Lvl <span id="player-stamina-level">1</span></p>
+                </div>
+            </div>
+
+            <!-- AI -->
+            <div id="ai-container" class="fighter-container w-1/2 text-center">
+                <h2 id="ai-name" class="text-2xl mb-2 text-red-400">Rival <span id="ai-champion-indicator" class="champion-belt hidden">🏆</span></h2>
+                <div class="stat-bar-container mb-2">
+                    <div id="ai-health-bar" class="stat-bar bg-green-500" style="width: 100%;"></div>
+                </div>
+                <p id="ai-health-text" class="text-lg">100 / 100</p>
+                <img id="ai-img" src="https://placehold.co/100x100/EF4444/FFFFFF?text=AI" alt="AI Face" class="fighter-img mt-12">
+                <div id="ai-stats" class="text-sm mt-2 space-y-1">
+                    <p>Rank: <span id="ai-rank">0</span></p>
+                    <p>Record: <span id="ai-wins">0</span>-<span id="ai-losses">0</span> (<span id="ai-win-streak">0</span> streak)</p>
+                    <p>Style: <span id="ai-style"></span></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Log -->
+        <div id="game-log" class="w-full p-4 rounded-lg mb-6 text-sm">
+            <p>The tournament begins! Choose your move.</p>
+        </div>
+
+        <!-- Player Actions -->
+        <div id="player-actions" class="grid grid-cols-4 gap-2">
+            <button onclick="playerAction('punch', 'head', 'jab')" class="action-button bg-red-600 hover:bg-red-700 p-3 rounded-lg text-white">Jab Head</button>
+            <button onclick="playerAction('punch', 'head', 'heavy')" class="action-button bg-red-800 hover:bg-red-900 p-3 rounded-lg text-white">Heavy Head</button>
+            <button onclick="playerAction('defend', 'head')" class="action-button bg-blue-600 hover:bg-blue-700 p-3 rounded-lg text-white">Defend Head</button>
+            <button onclick="playerAction('defend', 'body')" class="action-button bg-blue-600 hover:bg-blue-700 p-3 rounded-lg text-white">Defend Body</button>
+            <button onclick="playerAction('punch', 'body', 'jab')" class="action-button bg-red-600 hover:bg-red-700 p-3 rounded-lg text-white">Jab Body</button>
+            <button onclick="playerAction('punch', 'body', 'heavy')" class="action-button bg-red-800 hover:bg-red-900 p-3 rounded-lg text-white">Heavy Body</button>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center hidden">
+        <div id="modal-content" class="bg-gray-800 p-8 rounded-lg text-center shadow-xl w-full max-w-md">
+            <h2 id="modal-title" class="text-2xl mb-2"></h2>
+            <p id="modal-text" class="text-lg mb-4"></p>
+            <div id="news-section" class="hidden space-y-2 mb-4 text-left text-sm bg-gray-900 p-3 rounded"></div>
+            <div id="upgrade-section" class="hidden space-y-2 mb-4 text-left">
+                <p class="text-xl text-center mb-2">Your Money: $<span id="modal-money"></span></p>
+                <!-- Strength Upgrade -->
+                <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                    <span>Strength: Lvl <span id="str-lvl-modal">1</span></span>
+                    <button id="upgrade-strength-btn" class="modal-button bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-xs">
+                        + ($<span id="strength-cost">50</span>)
+                    </button>
+                </div>
+                <!-- Defense Upgrade -->
+                <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                    <span>Defense: Lvl <span id="def-lvl-modal">1</span></span>
+                    <button id="upgrade-defense-btn" class="modal-button bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-xs">
+                        + ($<span id="defense-cost">50</span>)
+                    </button>
+                </div>
+                <!-- Accuracy Upgrade -->
+                <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                    <span>Accuracy: Lvl <span id="acc-lvl-modal">1</span></span>
+                    <button id="upgrade-accuracy-btn" class="modal-button bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-xs">
+                        + ($<span id="accuracy-cost">50</span>)
+                    </button>
+                </div>
+                <!-- Stamina Upgrade -->
+                <div class="flex justify-between items-center bg-gray-700 p-2 rounded">
+                    <span>Stamina: Lvl <span id="sta-lvl-modal">1</span></span>
+                    <button id="upgrade-stamina-btn" class="modal-button bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg text-xs">
+                        + ($<span id="stamina-cost">50</span>)
+                    </button>
+                </div>
+            </div>
+             <div id="interview-section" class="hidden space-y-3 mb-4 text-left"></div>
+            <button id="modal-button" class="modal-button bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg"></button>
+        </div>
+    </div>
+    
+    <!-- Rankings Modal -->
+    <div id="rankings-modal" class="modal fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center hidden">
+        <div class="bg-gray-800 p-8 rounded-lg text-center shadow-xl w-full max-w-lg">
+            <h2 class="text-2xl mb-4 text-yellow-400">League Rankings</h2>
+            <div id="rankings-list" class="space-y-2 text-left text-sm bg-gray-900 p-4 rounded">
+                <!-- Rankings will be populated here -->
+            </div>
+            <button onclick="hideRankingsModal()" class="modal-button mt-6 bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-lg">Close</button>
+        </div>
+    </div>
+
+    <!-- In-Game Options Modal -->
+    <div id="in-game-options-modal" class="modal fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center hidden">
+        <div class="bg-gray-800 p-8 rounded-lg text-center shadow-xl w-full max-w-md">
+             <h1 class="text-3xl text-yellow-400 mb-6">Options</h1>
+            <div class="space-y-6">
+                <div>
+                    <label for="in-game-sfx-slider" class="block text-lg mb-2">Sound FX Volume</label>
+                    <input type="range" id="in-game-sfx-slider" min="0" max="100" class="w-full">
+                </div>
+                <div>
+                    <label for="in-game-music-slider" class="block text-lg mb-2">Music Volume</label>
+                    <input type="range" id="in-game-music-slider" min="0" max="100" class="w-full">
+                </div>
+                 <div class="flex items-center justify-center">
+                    <label for="in-game-music-toggle" class="text-lg mr-4">Music Enabled</label>
+                    <input type="checkbox" id="in-game-music-toggle" class="form-checkbox h-6 w-6 text-yellow-400 bg-gray-800 border-gray-600 focus:ring-yellow-500">
+                </div>
+            </div>
+            <button onclick="hideInGameOptionsModal()" class="modal-button mt-8 w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-4 px-6 rounded-lg text-lg">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Sound Manager ---
+        const soundManager = {
+            isInitialized: false,
+            sfxVolume: null,
+            musicVolume: null,
+            synths: {},
+
+            init: function() {
+                this.sfxVolume = new Tone.Volume(-10).toDestination(); // Default SFX volume
+                this.musicVolume = new Tone.Volume(-25).toDestination(); // Default Music volume (quieter)
+
+                this.synths.click = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 } }).connect(this.sfxVolume);
+                this.synths.punch = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 } }).connect(this.sfxVolume);
+                this.synths.grunt = new Tone.MembraneSynth({ pitchDecay: 0.8, octaves: 2, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2 } }).connect(this.sfxVolume);
+                this.synths.cash = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.1 } }).connect(this.sfxVolume);
+                this.synths.cheer = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "sawtooth" } }).connect(this.sfxVolume);
+                this.synths.boo = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fatsquare" } }).connect(this.sfxVolume);
+                this.isInitialized = true;
+            },
+
+            playClick: function() { if (!this.isInitialized) return; this.synths.click.triggerAttackRelease('C5', '8n'); },
+            playPunch: function() { if (!this.isInitialized || Math.random() < 0.3) return; this.synths.punch.triggerAttackRelease('4n'); },
+            playHurt: function() { if (!this.isInitialized || Math.random() < 0.3) return; const randomNote = ['C2', 'C#2', 'D2'][Math.floor(Math.random() * 3)]; this.synths.grunt.triggerAttackRelease(randomNote, '8n'); },
+            playCash: function() { if (!this.isInitialized) return; this.synths.cash.triggerAttackRelease('E5', '16n', Tone.now()); this.synths.cash.triggerAttackRelease('G5', '16n', Tone.now() + 0.1); this.synths.cash.triggerAttackRelease('C6', '16n', Tone.now() + 0.2); },
+            playWin: function() { if (!this.isInitialized || Math.random() < 0.2) return; const notes = ["C4", "E4", "G4", "C5"]; this.synths.cheer.triggerAttackRelease(notes, "1s"); },
+            playLoss: function() { if (!this.isInitialized || Math.random() < 0.2) return; const notes = ["C3", "D#3", "G3"]; this.synths.boo.triggerAttackRelease(notes, "1s"); },
+            
+            setSfxVolume: function(value) {
+                if (!this.isInitialized) return;
+                const db = (value / 100) * 40 - 40;
+                this.sfxVolume.volume.value = db > -39 ? db : -Infinity;
+            },
+            setMusicVolume: function(value) {
+                if (!this.isInitialized) return;
+                const db = (value / 100) * 50 - 50; // Music has a lower base volume
+                this.musicVolume.volume.value = db > -49 ? db : -Infinity;
+            }
+        };
+
+        // --- Music Manager ---
+        const musicManager = {
+            isPlaying: false,
+            isMusicEnabled: true,
+            synth: null,
+            currentSong: null,
+            songs: [
+                { tempo: 140, melody: [ ['C4', '8n'], [null, '8n'], ['G3', '8n'], [null, '8n'], ['C4', '8n'], ['E4', '8n'], ['G4', '4n'] ] },
+                { tempo: 160, melody: [ ['A3', '16n'], ['C4', '16n'], ['E4', '16n'], ['A4', '16n'], ['G4', '8n'], [null, '8n'], ['E4', '4n'] ] },
+                { tempo: 130, melody: [ ['F3', '8n'], ['F4', '8n'], ['D#4', '8n'], ['C#4', '8n'], ['C4', '4n'], [null, '4n'] ] },
+                { tempo: 150, melody: [ ['G3', '16n'], ['A#3', '16n'], ['C4', '16n'], ['D4', '16n'], ['G4', '8n'], ['D4', '8n'], ['C4', '4n'] ] }
+            ],
+
+            start: function() {
+                if (!soundManager.isInitialized || this.isPlaying || !this.isMusicEnabled) return;
+                this.synth = new Tone.Synth({ oscillator: { type: 'pulse', width: 0.2 }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 } }).connect(soundManager.musicVolume);
+                this.playRandomSong();
+                this.isPlaying = true;
+            },
+            
+            stop: function() {
+                Tone.Transport.stop();
+                Tone.Transport.cancel();
+                if (this.synth) {
+                    this.synth.dispose();
+                    this.synth = null;
+                }
+                this.isPlaying = false;
+            },
+
+            playRandomSong: function() {
+                if (!this.synth || !this.isMusicEnabled) return;
+
+                Tone.Transport.cancel(0);
+
+                const songData = this.songs[Math.floor(Math.random() * this.songs.length)];
+                let currentTime = 0;
+
+                const part = new Tone.Part((time, value) => {
+                    if (value.note) {
+                        this.synth.triggerAttackRelease(value.note, value.duration, time);
+                    }
+                });
+
+                songData.melody.forEach(note => {
+                    part.add(currentTime, { note: note[0], duration: note[1] });
+                    currentTime += Tone.Time(note[1]).toSeconds();
+                });
+
+                part.start(0);
+                Tone.Transport.bpm.value = songData.tempo;
+
+                Tone.Transport.scheduleOnce(() => {
+                    part.dispose();
+                    this.playRandomSong();
+                }, currentTime);
+
+                if (Tone.Transport.state !== 'started') {
+                    Tone.Transport.start();
+                }
+            }
+        };
+
+        // Game State
+        let playerName = "Player";
+        let playerRank = 49;
+        let playerHealth = 100;
+        let playerStamina = 100;
+        let maxStamina = 100;
+        let aiHealth = 100;
+        let fightCount = 0;
+        let gameOver = false;
+        let playerMoney = 0;
+        let playerStrengthLevel = 1;
+        let playerDefenseLevel = 1;
+        let playerAccuracyLevel = 1;
+        let playerStaminaLevel = 1;
+        let strengthUpgradeCost = 50;
+        let defenseUpgradeCost = 50;
+        let accuracyUpgradeCost = 50;
+        let staminaUpgradeCost = 50;
+        
+        // AI State
+        let aiStrengthLevel = 1;
+        let aiDefenseLevel = 1;
+        let lastPlayerMove = null;
+        let currentOpponent = null;
+        let playerLastSuccessfulHit = null;
+
+        // Persistent state
+        let playerWins = 0;
+        let playerLosses = 0;
+        let winStreak = 0;
+        let isChampion = false;
+        let titleDefenses = 0;
+        let opponentRoster = [];
+
+        const opponentNames = [
+            "Raze", "Jolt", "Crush", "Blitz", "Fury", "Viper", "Titan", "Goliath", "Wreck", "Havoc", "Spike", "Blade", "T-Bone", "K.O.", "Bruise", "Slam", "Rage", "Zane", "Axel", "Rocco", "Jax", "Maddox", "Ryker", "Nash", "Gunnar", "Maverick", "Diesel", "Colt", "Jagger", "Knox", "Brock", "Gage", "Stone", "Lance", "Ace", "Duke", "Hunter", "Rex", "Blaze", "Vortex", "Shadow", "Cyclone", "Specter", "Cannon", "Saber", "Wolf", "Fang", "Hawk", "Jett", "Rogue", "Grim", "Warden", "Reaper", "Butcher", "Savage", "Beast", "Monster", "Brute", "Thorn", "Vandal", "Vulture", "Wraith", "Phantom", "Ghost", "Daemon", "Diablo", "Lucifer", "Hades", "Ares", "Zeus", "Thor", "Odin", "Loki", "Anubis", "Ra", "Horus", "Osiris", "Set", "Thoth", "Kratos", "Drago", "Ivan", "Viktor", "Dimitri", "Mikhail", "Nikolai", "Sergei", "Vladimir", "Yuri", "Kenji", "Ryu", "Akira", "Takeshi", "Kaito", "Hiroshi", "Yuki", "Haruto", "Sora", "Ren"
+        ];
+        
+        const storyBots = {
+            "Titan": "The announcer mentions Titan was a former champion who lost the belt in a controversial decision.",
+            "Reaper": "The announcer notes that Reaper is known for his devastating heavy punches that have ended many careers.",
+            "Maverick": "The announcer talks about Maverick's flashy style and unorthodox training methods.",
+            "Drago": "The announcer recalls Drago's legendary iron chin, claiming he's never been knocked down."
+        };
+
+        // Announcer comments
+        let announcerCooldown = false;
+        const announcer = {
+            playerHit: (name) => [`Nice shot by ${name}!`, `${name} lands a clean hit!`, `That's gotta hurt!`, `${name} is connecting!`, `Solid punch from ${name}!`],
+            playerBigHit: (name) => [`What a blow from ${name}!`, `Devastating!`, `Out of nowhere!`, `${name} with a game changer!`, `Rocked him!`],
+            playerBlock: (name) => [`Great block by ${name}!`, `Denied!`, `${name} read him like a book!`, `Nothing doing!`, `A brick wall defense!`],
+            playerMiss: (name) => [`Whoosh! A swing and a miss from ${name}!`, `Just out of range!`, `Airball from ${name}!`],
+            combo: () => [`A beautiful combo!`, `One-two punch!`, `Putting it together now!`],
+            aiHit: (name) => [`Oof, ${name} caught one!`, `The opponent connects!`, `${name} has to watch out!`, `A swift counter!`, `Not good for ${name}!`],
+            aiBigHit: (name) => [`A massive shot lands on ${name}!`, `Trouble! Trouble!`, `${name} is hurt!`],
+            aiBlock: (name) => [`Blocked by ${name}!`, `${name} saw it coming!`, `A perfect defense!`, `Not getting through!`],
+            titleShot: (player, champ) => [`This is it! ${player} is fighting for the title against the champion, ${champ}!`, `The championship is on the line!`],
+            rivalry: (player, rival) => [`The rivalry continues!`, `${player} and ${rival} meet again!`],
+            undefeated: (name) => [`Watch out, ${name} is undefeated!`, `Can anyone stop ${name}?`]
+        };
+
+        // DOM Elements
+        const mainMenu = document.getElementById('main-menu');
+        const optionsMenu = document.getElementById('options-menu');
+        const nameModal = document.getElementById('name-modal');
+        const nameInput = document.getElementById('player-name-input');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const gameContainer = document.getElementById('game-container');
+        const announcerBubble = document.getElementById('announcer-bubble');
+        const playerNameDisplay = document.getElementById('player-name-display');
+        const playerRankEl = document.getElementById('player-rank');
+        const playerHealthBar = document.getElementById('player-health-bar');
+        const playerMainStatsText = document.getElementById('player-main-stats-text');
+        const playerStaminaBar = document.getElementById('player-stamina-bar');
+        const aiHealthBar = document.getElementById('ai-health-bar');
+        const aiHealthText = document.getElementById('ai-health-text');
+        const aiNameEl = document.getElementById('ai-name');
+        const aiRankEl = document.getElementById('ai-rank');
+        const aiWinStreakEl = document.getElementById('ai-win-streak');
+        const aiStyleEl = document.getElementById('ai-style');
+        const aiChampionIndicator = document.getElementById('ai-champion-indicator');
+        const aiImg = document.getElementById('ai-img');
+        const aiWinsEl = document.getElementById('ai-wins');
+        const aiLossesEl = document.getElementById('ai-losses');
+        const gameLog = document.getElementById('game-log');
+        const tournamentRoundEl = document.getElementById('tournament-round');
+        const playerContainer = document.getElementById('player-container');
+        const aiContainer = document.getElementById('ai-container');
+        const playerMoneyEl = document.getElementById('player-money');
+        const playerStrengthEl = document.getElementById('player-strength');
+        const playerDefenseEl = document.getElementById('player-defense');
+        const playerAccuracyEl = document.getElementById('player-accuracy');
+        const playerStaminaLevelEl = document.getElementById('player-stamina-level');
+        const playerWinsEl = document.getElementById('player-wins');
+        const playerLossesEl = document.getElementById('player-losses');
+        const playerDefensesEl = document.getElementById('player-defenses');
+        const winStreakEl = document.getElementById('win-streak');
+        const championIndicator = document.getElementById('champion-indicator');
+        
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalText = document.getElementById('modal-text');
+        const newsSection = document.getElementById('news-section');
+        const upgradeSection = document.getElementById('upgrade-section');
+        const modalMoneyEl = document.getElementById('modal-money');
+        const strengthCostEl = document.getElementById('strength-cost');
+        const defenseCostEl = document.getElementById('defense-cost');
+        const accuracyCostEl = document.getElementById('accuracy-cost');
+        const staminaCostEl = document.getElementById('stamina-cost');
+        const strLvlModal = document.getElementById('str-lvl-modal');
+        const defLvlModal = document.getElementById('def-lvl-modal');
+        const accLvlModal = document.getElementById('acc-lvl-modal');
+        const staLvlModal = document.getElementById('sta-lvl-modal');
+        const upgradeStrengthBtn = document.getElementById('upgrade-strength-btn');
+        const upgradeDefenseBtn = document.getElementById('upgrade-defense-btn');
+        const upgradeAccuracyBtn = document.getElementById('upgrade-accuracy-btn');
+        const upgradeStaminaBtn = document.getElementById('upgrade-stamina-btn');
+        
+        const rankingsModal = document.getElementById('rankings-modal');
+        const rankingsList = document.getElementById('rankings-list');
+        const inGameOptionsModal = document.getElementById('in-game-options-modal');
+        const inGameSfxSlider = document.getElementById('in-game-sfx-slider');
+        const inGameMusicSlider = document.getElementById('in-game-music-slider');
+        const inGameMusicToggle = document.getElementById('in-game-music-toggle');
+
+        // --- Game Logic ---
+
+        function initGame() {
+            loadRecord();
+            playerNameDisplay.textContent = playerName;
+            startNextRound();
+        }
+
+        function playerAction(action, target, punchType = null) {
+            if (gameOver) return;
+            soundManager.playClick();
+            
+            let heavyPunchFired = false;
+
+            if (action === 'punch') {
+                if (punchType === 'heavy') {
+                    const cost = 40;
+                    if (playerStamina < cost) {
+                        updateLog([`Not enough stamina for a heavy punch!`]);
+                        return;
+                    }
+                    playerStamina -= cost;
+                    heavyPunchFired = true;
+                } else { // Jab
+                    const cost = 10;
+                    if (playerStamina < cost) {
+                        updateLog([`Not enough stamina for a jab!`]);
+                        return;
+                    }
+                    playerStamina -= cost;
+                }
+            } else if (action === 'defend') {
+                const staminaGain = 20 + (playerStaminaLevel - 1) * 2;
+                playerStamina = Math.min(maxStamina, playerStamina + staminaGain);
+                playerLastSuccessfulHit = null; // Defending breaks combo
+            }
+
+            lastPlayerMove = { action, target, punchType };
+            const aiMove = getAiMove();
+            resolveTurn({ action, target, punchType }, aiMove);
+
+            if(heavyPunchFired && aiHealth > 0 && !gameOver) {
+                setTimeout(executeAiBonusTurn, 1000);
+            }
+        }
+        
+        function getAiMove() {
+            const style = currentOpponent.style;
+            const moves = [
+                { action: 'punch', target: 'head' }, { action: 'punch', 'target': 'body' },
+                { action: 'defend', target: 'head' }, { action: 'defend', 'target': 'body' }
+            ];
+            
+            let weightedMoves = [...moves];
+            if (style === 'Offensive') {
+                weightedMoves.push({ action: 'punch', target: 'head' }, { action: 'punch', target: 'body' });
+            } else if (style === 'Defensive') {
+                 weightedMoves.push({ action: 'defend', target: 'head' }, { action: 'defend', target: 'body' });
+            }
+
+            if (style !== 'Defensive' && lastPlayerMove && lastPlayerMove.action === 'punch') {
+                weightedMoves.push({ action: 'defend', target: lastPlayerMove.target });
+            }
+            return weightedMoves[Math.floor(Math.random() * weightedMoves.length)];
+        }
+
+        function resolveTurn(player, ai) {
+            let playerDamage = 0;
+            let aiDamage = 0;
+            let logMessages = [];
+            
+            const playerJabDmg = 10 + (playerStrengthLevel - 1) * 4; // Buffed base jab
+            const playerHeavyDmg = 25 + (playerStrengthLevel - 1) * 8; // Buffed base heavy
+            const aiPunchDmg = 10 + (aiStrengthLevel - 1) * 5;
+            const playerWrongBlockPenalty = Math.max(5, 20 - (playerDefenseLevel - 1) * 3);
+
+            if (player.action === 'punch') {
+                const hitChance = (player.punchType === 'heavy' ? 0.60 : 0.85) + (playerAccuracyLevel - 1) * 0.03;
+                if (Math.random() > hitChance) {
+                    logMessages.push(`You swing a ${player.punchType} punch... and miss!`);
+                    showAnnouncerBubble(announcer.playerMiss(playerName));
+                    playerLastSuccessfulHit = null; // Miss breaks combo
+                } else {
+                    let baseDamage = player.punchType === 'heavy' ? playerHeavyDmg : playerJabDmg;
+                    
+                    // Check for combo
+                    if (player.punchType === 'jab' && playerLastSuccessfulHit && playerLastSuccessfulHit.punchType === 'jab' && playerLastSuccessfulHit.target !== player.target) {
+                        baseDamage += 5; // Jab-Jab combo bonus
+                        showAnnouncerBubble(announcer.combo());
+                    } else if (player.punchType === 'heavy' && playerLastSuccessfulHit && playerLastSuccessfulHit.punchType === 'jab' && playerLastSuccessfulHit.target === player.target) {
+                        baseDamage += 10; // Jab-Heavy combo bonus
+                        showAnnouncerBubble(announcer.combo());
+                    }
+
+                    if (ai.action === 'defend' && player.target === ai.target) {
+                        aiDamage = 5;
+                        logMessages.push(`You attacked ${currentOpponent.name}, but they blocked! They took 5 recoil damage.`);
+                        showAnnouncerBubble(announcer.aiBlock(currentOpponent.name));
+                        playerLastSuccessfulHit = null; // Block breaks combo
+                    } else {
+                        aiDamage = ai.action === 'defend' ? baseDamage * 1.5 : baseDamage;
+                        const message = ai.action === 'defend' ? `Your ${player.punchType} broke through the wrong guard! ${currentOpponent.name} took ${Math.round(aiDamage)} damage!` : `Your ${player.punchType} connects! You deal ${Math.round(aiDamage)} damage.`;
+                        logMessages.push(message);
+                        aiContainer.classList.add('fighter-hit');
+                        soundManager.playPunch();
+                        showAnnouncerBubble(aiDamage > 25 ? announcer.playerBigHit(playerName) : announcer.playerHit(playerName));
+                        playerLastSuccessfulHit = { punchType: player.punchType, target: player.target };
+                    }
+                }
+            }
+
+            if (ai.action === 'punch') {
+                if (player.action === 'defend' && ai.target === player.target) {
+                    aiDamage += 5;
+                    logMessages.push(`${currentOpponent.name} attacked your ${ai.target}, but you blocked! They took 5 recoil damage.`);
+                    showAnnouncerBubble(announcer.playerBlock(playerName));
+                } else {
+                    playerDamage = player.action === 'defend' ? playerWrongBlockPenalty : aiPunchDmg;
+                    const message = player.action === 'defend' ? `${currentOpponent.name} attacked your ${ai.target}! You defended your ${player.target} and took ${Math.round(playerDamage)} damage!` : `${currentOpponent.name} punched you in the ${ai.target}, dealing ${Math.round(playerDamage)} damage.`;
+                    logMessages.push(message);
+                    playerContainer.classList.add('fighter-hit');
+                    soundManager.playHurt();
+                    showAnnouncerBubble(playerDamage > 15 ? announcer.aiBigHit(playerName) : announcer.aiHit(playerName));
+                }
+            }
+            
+            if (player.action === 'defend' && ai.action === 'defend') {
+                 logMessages.push(`You both defended. A tense standoff!`);
+            }
+
+            playerHealth = Math.max(0, playerHealth - Math.round(playerDamage));
+            aiHealth = Math.max(0, aiHealth - Math.round(aiDamage));
+            
+            updateLog(logMessages);
+            updateUI();
+            
+            setTimeout(() => {
+                playerContainer.classList.remove('fighter-hit');
+                aiContainer.classList.remove('fighter-hit');
+            }, 500);
+
+            if (!gameOver) checkGameOver();
+        }
+
+        function executeAiBonusTurn() {
+            if (gameOver) return;
+            toggleActionButtons(true);
+            const aiMove = getAiMove();
+            let playerDamage = 0;
+            let logMessages = [`You're exhausted from the heavy punch and can't defend!`];
+
+            if(aiMove.action === 'punch') {
+                const aiPunchDmg = 10 + (aiStrengthLevel - 1) * 5;
+                playerDamage = aiPunchDmg * 1.5; // Bonus damage on open opponent
+                logMessages.push(`${currentOpponent.name} capitalizes and lands a clean shot for ${Math.round(playerDamage)} damage!`);
+                playerContainer.classList.add('fighter-hit');
+                soundManager.playHurt();
+            } else {
+                logMessages.push(`${currentOpponent.name} cautiously defends, giving you a moment to recover.`);
+            }
+            
+            playerHealth = Math.max(0, playerHealth - Math.round(playerDamage));
+            updateLog(logMessages);
+            updateUI();
+            
+            setTimeout(() => {
+                playerContainer.classList.remove('fighter-hit');
+                if(!gameOver) toggleActionButtons(false);
+            }, 500);
+            
+            if (!gameOver) checkGameOver();
+        }
+
+        function checkGameOver() {
+            if (gameOver) return;
+            if (playerHealth <= 0 || aiHealth <= 0) {
+                gameOver = true;
+                toggleActionButtons(true);
+
+                setTimeout(() => {
+                    if (aiHealth <= 0) { // Player Wins
+                        playerWins++;
+                        winStreak++;
+                        currentOpponent.losses++;
+                        currentOpponent.lastResult = 'loss';
+                        currentOpponent.winStreak = 0;
+                        currentOpponent.lossesToPlayer = (currentOpponent.lossesToPlayer || 0) + 1;
+                        if (currentOpponent.lossesToPlayer >= 2) { // Rivalry triggers at 2 losses now
+                            currentOpponent.isRival = true;
+                        }
+                        
+                        let moneyWon = 50 + (50 - playerRank) * 5;
+                        let modalTitleText = 'You Win!';
+                        let modalBodyText = `You defeated #${currentOpponent.rank} ${currentOpponent.name}!`;
+                        
+                        const opponentOldRank = currentOpponent.rank;
+                        const isTitleShotWin = opponentOldRank === 2 && !isChampion;
+
+                        if (isChampion) {
+                            moneyWon *= 2;
+                            titleDefenses++;
+                            modalBodyText = `You defended your title (${titleDefenses}x) and earned $${moneyWon}!`;
+                        } else if (opponentOldRank === 1) { // Win title shot
+                            isChampion = true;
+                            const oldPlayerRank = playerRank;
+                            playerRank = 1;
+                            currentOpponent.rank = oldPlayerRank;
+                            modalTitleText = 'NEW CHAMPION!';
+                            modalBodyText = `You defeated the champion and claimed the belt! You are the new #1!`;
+                        } else { // Regular win
+                            if (opponentOldRank < playerRank) {
+                                const oldPlayerRank = playerRank;
+                                playerRank = opponentOldRank;
+                                currentOpponent.rank = oldPlayerRank;
+                                modalBodyText += ` You are now ranked #${playerRank}!`;
+                            }
+                            if(isTitleShotWin) {
+                                modalBodyText += ` You've earned a shot at the title!`
+                            }
+                        }
+                        
+                        if (currentOpponent.isRival) {
+                            const bonus = Math.floor(moneyWon * 0.5);
+                            moneyWon += bonus;
+                            modalBodyText += ` Rivalry bonus: +$${bonus}!`;
+                        }
+
+                        if (winStreak === 8 && playerRank > 20) {
+                            const oldRankForMessage = playerRank;
+                            playerRank -= 10;
+                            playerRank = Math.max(21, playerRank);
+                            modalBodyText += ` An 8-fight win streak boosts you from rank ${oldRankForMessage} to #${playerRank}!`;
+                            winStreak = 0;
+                        }
+
+                        playerMoney += moneyWon;
+                        saveRecord();
+                        updateStatsUI();
+                        soundManager.playWin();
+                        showNewsAndUpgrades(modalTitleText, modalBodyText);
+
+                    } else { // Player Loses
+                        playerLosses++;
+                        winStreak = 0;
+                        currentOpponent.wins++;
+                        currentOpponent.winStreak++;
+                        currentOpponent.lastResult = 'win';
+                        const rankDrop = Math.floor(Math.random() * 3) + 1;
+                        playerRank += rankDrop;
+                        if (playerRank > 50) playerRank = 50;
+
+                        let modalText = `You have been defeated and drop to rank #${playerRank}.`;
+                        const penalty = applyLossPenalty();
+                        if (penalty) {
+                            modalText += ` Your ${penalty} skill has decreased by 1!`
+                        }
+
+                        if (isChampion) {
+                            modalText = `You have been defeated, lost the championship belt, and drop to rank #${playerRank}!`;
+                            isChampion = false;
+                            titleDefenses = 0;
+                        }
+                        saveRecord();
+                        updateStatsUI();
+                        soundManager.playLoss();
+                        showEndGameModal('You Lost!', modalText, 'Continue Career', handleLoss);
+                    }
+                }, 1000);
+            }
+        }
+        
+        function applyLossPenalty() {
+            const skills = [];
+            if (playerStrengthLevel > 1) skills.push('Strength');
+            if (playerDefenseLevel > 1) skills.push('Defense');
+            if (playerAccuracyLevel > 1) skills.push('Accuracy');
+            if (playerStaminaLevel > 1) skills.push('Stamina');
+
+            if (skills.length > 0) {
+                const skillToReduce = skills[Math.floor(Math.random() * skills.length)];
+                switch(skillToReduce) {
+                    case 'Strength': playerStrengthLevel--; break;
+                    case 'Defense': playerDefenseLevel--; break;
+                    case 'Accuracy': playerAccuracyLevel--; break;
+                    case 'Stamina': playerStaminaLevel--; break;
+                }
+                return skillToReduce;
+            }
+            return null;
+        }
+        
+        function simulateLeagueNews() {
+            let simulationResults = ["<p class='text-center font-bold text-yellow-400'>--- League News ---</p>"];
+            const victoryTypes = ["a stunning 3rd round knockout", "a flash knockout victory", "a hard-fought battle via the judges' scorecards", "a dominant unanimous decision", "a TKO victory"];
+            
+            // Champion Simulation
+            if (!isChampion) {
+                const champ = opponentRoster.find(f => f.rank === 1);
+                const challenger = opponentRoster.find(f => f.rank === 2);
+                if (champ && challenger && Math.random() < 0.3) { // 30% chance of a title fight simulation
+                    if (Math.random() < 0.8) { // 80% chance champ wins
+                        champ.wins++; champ.winStreak++; challenger.losses++; challenger.winStreak = 0;
+                        simulationResults.push(`<p>The champion, ${champ.name}, defended the title against #${challenger.rank} ${challenger.name}!</p>`);
+                    } else {
+                        challenger.wins++; challenger.winStreak++; champ.losses++; champ.winStreak = 0;
+                        champ.rank = 2; challenger.rank = 1;
+                        simulationResults.push(`<p class='text-yellow-400'>NEW CHAMPION! #${challenger.rank} ${challenger.name} has defeated ${champ.name}!</p>`);
+                    }
+                }
+            }
+
+            // Other notable news
+            if (Math.random() < 0.4) { // 40% chance of a random news story
+                const notableFighters = opponentRoster.filter(f => f.rank > 5 && f.rank <= 20);
+                const fighter1 = notableFighters[Math.floor(Math.random() * notableFighters.length)];
+                let fighter2 = notableFighters[Math.floor(Math.random() * notableFighters.length)];
+                while(fighter1.name === fighter2.name) {
+                     fighter2 = notableFighters[Math.floor(Math.random() * notableFighters.length)];
+                }
+                const winner = Math.random() > 0.5 ? fighter1 : fighter2;
+                const victory = victoryTypes[Math.floor(Math.random() * victoryTypes.length)];
+                simulationResults.push(`<p>In other news, ${winner.name} secured ${victory} over ${winner === fighter1 ? fighter2.name : fighter1.name}.</p>`);
+            }
+             if (Math.random() < 0.3) {
+                const hotStreakFighter = opponentRoster.find(f => f.winStreak >= 5 && f.rank > 5);
+                if(hotStreakFighter) {
+                    simulationResults.push(`<p>${hotStreakFighter.name} is on a tear with ${hotStreakFighter.winStreak} straight wins!</p>`);
+                }
+            }
+
+            return simulationResults.length > 1 ? simulationResults : [];
+        }
+
+
+        function startNextRound() {
+            fightCount++;
+            playerHealth = 100;
+            maxStamina = 100 + (playerStaminaLevel - 1) * 10;
+            playerStamina = maxStamina;
+            aiHealth = 100;
+            gameOver = false;
+            lastPlayerMove = null;
+            playerLastSuccessfulHit = null;
+            
+            // --- Matchmaking Logic ---
+            let potentialOpponents = [];
+            if(isChampion) {
+                potentialOpponents = opponentRoster.filter(opp => opp.rank >= 2 && opp.rank <= 5);
+            } else if (playerRank <= 6) {
+                const targetRank = playerRank - 1;
+                potentialOpponents = opponentRoster.filter(opp => opp.rank === targetRank);
+            } else {
+                const minRank = playerRank - 2;
+                potentialOpponents = opponentRoster.filter(opp => opp.rank >= minRank && opp.rank < playerRank);
+            }
+
+            if (potentialOpponents.length === 0 && playerRank > 1) {
+                 potentialOpponents = opponentRoster.filter(opp => opp.rank < playerRank).sort((a,b) => b.rank - a.rank);
+            }
+            if (potentialOpponents.length === 0) {
+                 potentialOpponents = opponentRoster.filter(opp => opp.rank > playerRank).sort((a,b) => a.rank - b.rank);
+            }
+
+            currentOpponent = potentialOpponents[Math.floor(Math.random() * potentialOpponents.length)];
+
+
+            // --- New Tiered Difficulty Scaling ---
+            let difficultyMultiplier = 0.5; // Ranks 50-31
+            if (currentOpponent.rank <= 30 && currentOpponent.rank > 10) {
+                difficultyMultiplier = 0.75; // Ranks 30-11
+            } else if (currentOpponent.rank <= 10 && currentOpponent.rank > 1) {
+                difficultyMultiplier = 1.0; // Ranks 10-2
+            } else if (currentOpponent.rank === 1) {
+                difficultyMultiplier = 1.1; // The Champion has a slight edge
+            }
+            
+            aiStrengthLevel = Math.max(1, Math.ceil(playerStrengthLevel * difficultyMultiplier));
+            aiDefenseLevel = Math.max(1, Math.ceil(playerDefenseLevel * difficultyMultiplier));
+
+            // Update AI Display
+            aiRankEl.textContent = currentOpponent.rank;
+            aiWinsEl.textContent = currentOpponent.wins;
+            aiLossesEl.textContent = currentOpponent.losses;
+            aiWinStreakEl.textContent = currentOpponent.winStreak;
+            aiStyleEl.textContent = currentOpponent.style;
+            const isTitleHolder = currentOpponent.rank === 1 && !isChampion;
+            const rivalIndicator = currentOpponent.isRival ? ' 🔥' : '';
+            aiNameEl.innerHTML = `${currentOpponent.name}${rivalIndicator} <span id="ai-champion-indicator" class="champion-belt ${isTitleHolder ? '' : 'hidden'}">🏆</span>`;
+            aiNameEl.classList.toggle('golden-name', isTitleHolder);
+            aiImg.src = `https://placehold.co/100x100/EF4444/FFFFFF?text=${currentOpponent.name.substring(0,2).toUpperCase()}`;
+            
+            // Update Round Display
+            let roundText = `Fight #${fightCount}`;
+            if (isChampion) {
+                roundText = 'TITLE DEFENSE';
+            } else if (currentOpponent.rank === 1) {
+                roundText = 'TITLE SHOT!';
+            } else if (currentOpponent.rank === 2 && playerRank === 3) {
+                roundText = 'TITLE ELIMINATOR';
+            }
+            tournamentRoundEl.textContent = roundText;
+            tournamentRoundEl.classList.toggle('champion-belt', isChampion || currentOpponent.rank <= 2);
+
+            // Update Game Log with Tale of the Tape
+            let introLines = [];
+            introLines.push(`--- Tale of the Tape ---`);
+            introLines.push(`${playerName} (${playerWins}-${playerLosses}) vs. ${currentOpponent.name} (${currentOpponent.wins}-${currentOpponent.losses})`);
+            if (currentOpponent.isRival) {
+                setTimeout(() => showAnnouncerBubble(announcer.rivalry(playerName, currentOpponent.name)), 500);
+            } else if (currentOpponent.lastResult === 'loss') {
+                introLines.push(`${currentOpponent.name} lost the last fight against ${playerName} but hopes to win this rematch.`);
+            } else if (currentOpponent.lastResult === 'win') {
+                introLines.push(`You lost your last encounter with ${currentOpponent.name}. Time for redemption!`);
+            }
+            
+            if (storyBots[currentOpponent.name]) {
+                introLines.push(storyBots[currentOpponent.name]);
+            }
+
+            if (currentOpponent.wins > 0 && currentOpponent.losses === 0) {
+                 setTimeout(() => showAnnouncerBubble(announcer.undefeated(currentOpponent.name)), 500);
+            }
+
+            if (currentOpponent.rank === 1 && !isChampion) {
+                setTimeout(() => showAnnouncerBubble(announcer.titleShot(playerName, currentOpponent.name)), 500);
+            }
+
+            introLines.push('The fight begins!');
+            updateLog(introLines);
+            
+            updateStatsUI();
+            updateUI();
+            toggleActionButtons(false);
+        }
+
+        function handleLoss() {
+            if (playerRank < 20) {
+                playerMoney = Math.floor(playerMoney * 0.9); // 10% money penalty only if ranked in the top 20
+            }
+            updateLog(['You dust yourself off and prepare for the next challenge.']);
+            startNextRound();
+        }
+
+        function showAnnouncerBubble(messages) {
+            if (announcerCooldown || Math.random() > 0.6) return;
+
+            announcerCooldown = true;
+            const message = Array.isArray(messages) ? messages[Math.floor(Math.random() * messages.length)] : messages;
+            announcerBubble.textContent = message;
+            announcerBubble.style.opacity = '1';
+            
+            setTimeout(() => { announcerBubble.style.opacity = '0'; }, 2000);
+            setTimeout(() => { announcerCooldown = false; }, 3000);
+        }
+
+        function updateUI() {
+            playerMainStatsText.textContent = `HP: ${playerHealth}/100 | SP: ${playerStamina}/${maxStamina}`;
+            playerHealthBar.style.width = `${(playerHealth / 100) * 100}%`;
+            playerHealthBar.style.backgroundColor = getHealthColor(playerHealth);
+            
+            playerStaminaBar.style.width = `${(playerStamina / maxStamina) * 100}%`;
+            
+            aiHealthText.textContent = `${aiHealth} / 100`;
+            aiHealthBar.style.width = `${(aiHealth / 100) * 100}%`;
+            aiHealthBar.style.backgroundColor = getHealthColor(aiHealth);
+        }
+        
+        function updateStatsUI() {
+            playerRankEl.textContent = playerRank;
+            playerMoneyEl.textContent = playerMoney;
+            playerStrengthEl.textContent = playerStrengthLevel;
+            playerDefenseEl.textContent = playerDefenseLevel;
+            playerAccuracyEl.textContent = playerAccuracyLevel;
+            playerStaminaLevelEl.textContent = playerStaminaLevel;
+            playerWinsEl.textContent = playerWins;
+            playerLossesEl.textContent = playerLosses;
+            winStreakEl.textContent = winStreak;
+            playerDefensesEl.textContent = titleDefenses;
+            championIndicator.classList.toggle('hidden', !isChampion);
+            playerNameDisplay.classList.toggle('golden-name', isChampion);
+        }
+
+        function getHealthColor(health) {
+            if (health > 60) return '#48bb78';
+            if (health > 30) return '#f6e05e';
+            return '#f56565';
+        }
+
+        function updateLog(messages) {
+            gameLog.innerHTML = messages.map(msg => `<p>${msg}</p>`).join('');
+            gameLog.scrollTop = gameLog.scrollHeight;
+        }
+        
+        function showEndGameModal(title, text, buttonText, buttonAction) {
+            upgradeSection.classList.add('hidden');
+            newsSection.classList.add('hidden');
+            modalTitle.textContent = title;
+            modalText.textContent = text;
+            
+            const oldModalButton = document.getElementById('modal-button');
+            const newModalButton = oldModalButton.cloneNode(true);
+            newModalButton.textContent = buttonText;
+            oldModalButton.parentNode.replaceChild(newModalButton, oldModalButton);
+
+            newModalButton.addEventListener('click', () => {
+                modal.classList.add('hidden');
+                buttonAction();
+            });
+            
+            modal.classList.remove('hidden');
+        }
+        
+        function showNewsAndUpgrades(title, text) {
+            const news = simulateLeagueNews();
+            const modalButton = document.getElementById('modal-button');
+            if (news.length > 0) {
+                newsSection.innerHTML = news.join('');
+                newsSection.classList.remove('hidden');
+                upgradeSection.classList.add('hidden');
+                modalTitle.textContent = "Latest News";
+                modalText.textContent = "";
+                
+                const newModalButton = modalButton.cloneNode(true);
+                newModalButton.textContent = "Continue";
+                modalButton.parentNode.replaceChild(newModalButton, modalButton);
+
+                newModalButton.addEventListener('click', () => {
+                    showUpgradeModal(title, text);
+                }, { once: true });
+
+            } else {
+                showUpgradeModal(title, text);
+            }
+             modal.classList.remove('hidden');
+        }
+
+
+        function showUpgradeModal(title, text) {
+            modalTitle.textContent = title;
+            modalText.textContent = text;
+            newsSection.classList.add('hidden');
+            upgradeSection.classList.remove('hidden');
+            
+            modalMoneyEl.textContent = playerMoney;
+            
+            strengthCostEl.textContent = strengthUpgradeCost;
+            defenseCostEl.textContent = defenseUpgradeCost;
+            accuracyCostEl.textContent = accuracyUpgradeCost;
+            staminaCostEl.textContent = staminaUpgradeCost;
+
+            strLvlModal.textContent = playerStrengthLevel;
+            defLvlModal.textContent = playerDefenseLevel;
+            accLvlModal.textContent = playerAccuracyLevel;
+            staLvlModal.textContent = playerStaminaLevel;
+            
+            upgradeStrengthBtn.disabled = playerMoney < strengthUpgradeCost;
+            upgradeDefenseBtn.disabled = playerMoney < defenseUpgradeCost;
+            upgradeAccuracyBtn.disabled = playerMoney < accuracyUpgradeCost;
+            upgradeStaminaBtn.disabled = playerMoney < staminaUpgradeCost;
+            
+            upgradeStrengthBtn.onclick = () => upgradeStat('strength');
+            upgradeDefenseBtn.onclick = () => upgradeStat('defense');
+            upgradeAccuracyBtn.onclick = () => upgradeStat('accuracy');
+            upgradeStaminaBtn.onclick = () => upgradeStat('stamina');
+            
+            const oldModalButton = document.getElementById('modal-button');
+            const newModalButton = oldModalButton.cloneNode(true);
+            newModalButton.textContent = 'Next Fight';
+            oldModalButton.parentNode.replaceChild(newModalButton, oldModalButton);
+            
+            newModalButton.addEventListener('click', () => {
+                modal.classList.add('hidden');
+                startNextRound();
+            });
+
+            modal.classList.remove('hidden');
+        }
+        
+        function upgradeStat(stat) {
+            soundManager.playCash();
+            if (stat === 'strength' && playerMoney >= strengthUpgradeCost) {
+                playerMoney -= strengthUpgradeCost; playerStrengthLevel++; strengthUpgradeCost = Math.floor(strengthUpgradeCost * 1.5);
+            } else if (stat === 'defense' && playerMoney >= defenseUpgradeCost) {
+                playerMoney -= defenseUpgradeCost; playerDefenseLevel++; defenseUpgradeCost = Math.floor(defenseUpgradeCost * 1.5);
+            } else if (stat === 'accuracy' && playerMoney >= accuracyUpgradeCost) {
+                playerMoney -= accuracyUpgradeCost; playerAccuracyLevel++; accuracyUpgradeCost = Math.floor(accuracyUpgradeCost * 1.5);
+            } else if (stat === 'stamina' && playerMoney >= staminaUpgradeCost) {
+                playerMoney -= staminaUpgradeCost; playerStaminaLevel++; staminaUpgradeCost = Math.floor(staminaUpgradeCost * 1.5);
+            }
+            updateStatsUI();
+            
+            // Update modal UI after purchase
+            modalMoneyEl.textContent = playerMoney;
+            strengthCostEl.textContent = strengthUpgradeCost;
+            defenseCostEl.textContent = defenseUpgradeCost;
+            accuracyCostEl.textContent = accuracyUpgradeCost;
+            staminaCostEl.textContent = staminaUpgradeCost;
+            strLvlModal.textContent = playerStrengthLevel;
+            defLvlModal.textContent = playerDefenseLevel;
+            accLvlModal.textContent = playerAccuracyLevel;
+            staLvlModal.textContent = playerStaminaLevel;
+            upgradeStrengthBtn.disabled = playerMoney < strengthUpgradeCost;
+            upgradeDefenseBtn.disabled = playerMoney < defenseUpgradeCost;
+            upgradeAccuracyBtn.disabled = playerMoney < accuracyUpgradeCost;
+            upgradeStaminaBtn.disabled = playerMoney < staminaUpgradeCost;
+        }
+
+        function toggleActionButtons(disabled) {
+            document.querySelectorAll('.action-button').forEach(button => button.disabled = disabled);
+        }
+
+        function showRankingsModal() {
+            soundManager.playClick();
+            rankingsList.innerHTML = ''; // Clear previous list
+            const allFighters = [
+                { name: playerName, rank: playerRank, wins: playerWins, losses: playerLosses, isPlayer: true },
+                ...opponentRoster
+            ];
+            allFighters.sort((a,b) => a.rank - b.rank);
+            
+            allFighters.forEach(fighter => {
+                const fighterDiv = document.createElement('div');
+                fighterDiv.className = `p-2 rounded flex justify-between items-center ${fighter.isPlayer ? 'bg-blue-800' : ''}`;
+                const champIndicator = (fighter.rank === 1 && (fighter.isPlayer ? isChampion : !isChampion)) ? '🏆' : '';
+                fighterDiv.innerHTML = `
+                    <span>#${fighter.rank} ${fighter.name} ${champIndicator}</span>
+                    <span>${fighter.wins}-${fighter.losses}</span>
+                `;
+                rankingsList.appendChild(fighterDiv);
+            });
+            
+            rankingsModal.classList.remove('hidden');
+        }
+
+        function hideRankingsModal() {
+            soundManager.playClick();
+            rankingsModal.classList.add('hidden');
+        }
+        
+        function showInGameOptionsModal() {
+            soundManager.playClick();
+            const savedSfxVolume = localStorage.getItem('gameSfxVolume') || 40;
+            const savedMusicVolume = localStorage.getItem('gameMusicVolume') || 40;
+            const musicEnabled = localStorage.getItem('gameMusicEnabled') === null ? true : localStorage.getItem('gameMusicEnabled') === 'true';
+            inGameSfxSlider.value = savedSfxVolume;
+            inGameMusicSlider.value = savedMusicVolume;
+            inGameMusicToggle.checked = musicEnabled;
+            inGameOptionsModal.classList.remove('hidden');
+        }
+
+        function hideInGameOptionsModal() {
+            soundManager.playClick();
+            inGameOptionsModal.classList.add('hidden');
+        }
+
+        // --- Data Persistence ---
+        function saveRecord() {
+            const record = {
+                name: playerName, rank: playerRank, wins: playerWins, losses: playerLosses, winStreak: winStreak, isChampion: isChampion, titleDefenses: titleDefenses, roster: opponentRoster, money: playerMoney, strengthLevel: playerStrengthLevel, defenseLevel: playerDefenseLevel, accuracyLevel: playerAccuracyLevel, staminaLevel: playerStaminaLevel, strengthCost: strengthUpgradeCost, defenseCost: defenseUpgradeCost, accuracyCost: accuracyUpgradeCost, staminaCost: staminaUpgradeCost, fightCount: fightCount
+            };
+            localStorage.setItem('fighterRecord', JSON.stringify(record));
+        }
+        
+        function initializeRoster() {
+            const shuffledNames = [...opponentNames].sort(() => 0.5 - Math.random());
+            const styles = ['Offensive', 'Defensive', 'Balanced'];
+            for (let i = 0; i < 50; i++) {
+                const rank = i + 1;
+                const wins = Math.floor(Math.random() * (55 - rank) + (rank < 20 ? 10 : 0));
+                const losses = Math.floor(Math.random() * (rank/5) + 1);
+                opponentRoster.push({
+                    name: shuffledNames[i], rank: rank, wins: wins, losses: losses, lastResult: null, winStreak: Math.floor(Math.random() * wins / 2), lossesToPlayer: 0, isRival: false, style: styles[Math.floor(Math.random() * styles.length)]
+                });
+            }
+        }
+
+        function loadRecord() {
+            const record = JSON.parse(localStorage.getItem('fighterRecord'));
+            if (record) {
+                playerName = record.name || "Player";
+                playerRank = record.rank || 49;
+                playerWins = record.wins || 0;
+                playerLosses = record.losses || 0;
+                winStreak = record.winStreak || 0;
+                isChampion = record.isChampion || false;
+                titleDefenses = record.titleDefenses || 0;
+                opponentRoster = record.roster || [];
+                playerMoney = record.money || 0;
+                playerStrengthLevel = record.strengthLevel || 1;
+                playerDefenseLevel = record.defenseLevel || 1;
+                playerAccuracyLevel = record.accuracyLevel || 1;
+                playerStaminaLevel = record.staminaLevel || 1;
+                strengthUpgradeCost = record.strengthCost || 50;
+                defenseUpgradeCost = record.defenseCost || 50;
+                accuracyUpgradeCost = record.accuracyCost || 50;
+                staminaUpgradeCost = record.staminaCost || 50;
+                fightCount = record.fightCount || 0;
+
+                if (opponentRoster.length === 0) {
+                    initializeRoster();
+                }
+            } else {
+                playerRank = 49; // Set starting rank for new players
+                initializeRoster();
+            }
+        }
+
+        // --- Initial Setup ---
+        const playBtn = document.getElementById('play-btn');
+        const optionsBtn = document.getElementById('options-btn');
+        const quitBtn = document.getElementById('quit-btn');
+        const backBtn = document.getElementById('back-btn');
+        const sfxVolumeSlider = document.getElementById('sfx-volume-slider');
+        const musicVolumeSlider = document.getElementById('music-volume-slider');
+        const musicToggle = document.getElementById('music-toggle');
+
+        function firstInteraction() {
+            Tone.start();
+            soundManager.init();
+            const savedSfxVolume = localStorage.getItem('gameSfxVolume') || 40;
+            const savedMusicVolume = localStorage.getItem('gameMusicVolume') || 40;
+            const musicEnabled = localStorage.getItem('gameMusicEnabled') === null ? true : localStorage.getItem('gameMusicEnabled') === 'true';
+            
+            sfxVolumeSlider.value = savedSfxVolume;
+            musicVolumeSlider.value = savedMusicVolume;
+            musicToggle.checked = musicEnabled;
+            musicManager.isMusicEnabled = musicEnabled;
+            
+            soundManager.setSfxVolume(savedSfxVolume);
+            soundManager.setMusicVolume(savedMusicVolume);
+            
+            if(musicManager.isMusicEnabled) {
+                musicManager.start();
+            }
+
+            document.body.removeEventListener('click', firstInteraction);
+        }
+        document.body.addEventListener('click', firstInteraction, { once: true });
+
+        playBtn.addEventListener('click', () => {
+            soundManager.playClick();
+            mainMenu.classList.add('hidden');
+            if (localStorage.getItem('fighterRecord')) {
+                gameContainer.classList.remove('hidden');
+                initGame();
+            } else {
+                nameModal.classList.remove('hidden');
+            }
+        });
+
+        optionsBtn.addEventListener('click', () => {
+            soundManager.playClick();
+            mainMenu.classList.add('hidden');
+            optionsMenu.classList.remove('hidden');
+        });
+
+        quitBtn.addEventListener('click', () => {
+            soundManager.playClick();
+            mainMenu.innerHTML = `<h1 class="text-3xl text-yellow-400 mb-4">Thanks for Playing!</h1>`;
+            musicManager.stop();
+        });
+
+        backBtn.addEventListener('click', () => {
+            soundManager.playClick();
+            optionsMenu.classList.add('hidden');
+            mainMenu.classList.remove('hidden');
+        });
+
+        sfxVolumeSlider.addEventListener('input', (e) => {
+            const volume = e.target.value;
+            soundManager.setSfxVolume(volume);
+            localStorage.setItem('gameSfxVolume', volume);
+        });
+
+        musicVolumeSlider.addEventListener('input', (e) => {
+            const volume = e.target.value;
+            soundManager.setMusicVolume(volume);
+            localStorage.setItem('gameMusicVolume', volume);
+        });
+        
+        musicToggle.addEventListener('change', (e) => {
+            musicManager.isMusicEnabled = e.target.checked;
+            localStorage.setItem('gameMusicEnabled', e.target.checked);
+            if (e.target.checked) {
+                musicManager.start();
+            } else {
+                musicManager.stop();
+            }
+        });
+        
+        inGameSfxSlider.addEventListener('input', (e) => {
+            const volume = e.target.value;
+            soundManager.setSfxVolume(volume);
+            localStorage.setItem('gameSfxVolume', volume);
+        });
+
+        inGameMusicSlider.addEventListener('input', (e) => {
+            const volume = e.target.value;
+            soundManager.setMusicVolume(volume);
+            localStorage.setItem('gameMusicVolume', volume);
+        });
+        
+        inGameMusicToggle.addEventListener('change', (e) => {
+            musicManager.isMusicEnabled = e.target.checked;
+            localStorage.setItem('gameMusicEnabled', e.target.checked);
+            if (e.target.checked) {
+                musicManager.start();
+            } else {
+                musicManager.stop();
+            }
+        });
+
+        startGameBtn.addEventListener('click', () => {
+            soundManager.playClick();
+            const name = nameInput.value.trim();
+            if (name) {
+                playerName = name;
+                saveRecord();
+                nameModal.classList.add('hidden');
+                gameContainer.classList.remove('hidden');
+                initGame();
+            }
+        });
+
+        window.onload = () => {
+             loadRecord();
+        };
+    </script>
+</body>
+</html>
